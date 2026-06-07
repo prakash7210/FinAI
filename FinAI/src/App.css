@@ -1,0 +1,72 @@
+#root {
+  width: 100%;
+}
+
+.app-loading {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  color: var(--muted);
+  background: var(--bg);
+  font-weight: 700;
+}
+
+.splash-screen {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  gap: 18px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.splash-logo {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  border-radius: 18px;
+  color: #fff;
+  background: linear-gradient(135deg, #111827 0%, #15803d 55%, #2563eb 100%);
+  box-shadow: 0 22px 48px rgba(37, 99, 235, 0.22);
+  font-size: 24px;
+  font-weight: 900;
+  animation: splash-pop 850ms ease both;
+}
+
+.splash-copy {
+  display: grid;
+  gap: 5px;
+  text-align: center;
+  animation: splash-fade 850ms ease both;
+}
+
+.splash-copy strong {
+  font-size: 22px;
+}
+
+.splash-copy span {
+  color: var(--muted);
+}
+
+@keyframes splash-pop {
+  from {
+    transform: scale(0.88) translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes splash-fade {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
