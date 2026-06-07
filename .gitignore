@@ -1,0 +1,15 @@
+# Python
+venv/
+BACKEND/venv/
+__pycache__/
+*.pyc
+
+# React Native
+node_modules/
+
+# Env
+.env
+
+# Build
+build/
+dist/
