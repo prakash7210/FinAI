@@ -36,7 +36,7 @@ def get_best_source(query):
 
     scores = get_source_scores(query)
 
-    best_source = max(scores, key=scores.get)
+    best_source = max(scores, key=scores.get) # Get max key value based on score
 
     if scores[best_source] > 0:
         return best_source
@@ -45,14 +45,14 @@ def get_best_source(query):
 
 
 # -----------------------------
-# APPLY RLHF (MAIN LOGIC 🔥)
+# APPLY RLHF (MAIN LOGIC )
 # -----------------------------
 def apply_rlhf(query, current_source):
 
     best_source = get_best_source(query)
 
     if best_source and best_source != current_source:
-        print(f"🔁 RLHF override: {current_source} → {best_source}")
+        print(f" RLHF override: {current_source} → {best_source}")
         return best_source
 
     return current_source

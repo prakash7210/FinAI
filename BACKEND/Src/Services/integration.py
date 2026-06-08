@@ -20,6 +20,22 @@ def generate_feedback_answer(query, context, mode):
 # CONFIDENCE    
 # -----------------------------
 def compute_confidence(response: str):
+    uncertainty_words = [
+        "not sure",
+        "maybe",
+        "possibly",
+        "uncertain",
+        "might"
+    ]
+    positive_keywords = [
+        "risk",
+        "opportunity",
+        "valuation",
+        "growth",
+        "recommendation",
+        "analysis",
+        "strategy"
+    ]
     if not response:
         return 0.0
 
@@ -28,14 +44,13 @@ def compute_confidence(response: str):
     if len(response) > 200:
         score += 0.3
 
-    if "risk" in response.lower():
-        score += 0.1
+    for word in positive_keywords:
+        if word in response.lower():
+            score += 0.2
 
-    if "recommendation" in response.lower():
-        score += 0.1
-
-    if "not sure" in response.lower():
-        score -= 0.4
+    for word in uncertainty_words:
+        if word in response.lower():
+            score -= 0.4
 
     return max(min(score, 1.0), 0.0)
 
@@ -43,7 +58,7 @@ def compute_confidence(response: str):
 # -----------------------------
 # MAIN PIPELINE
 # -----------------------------
-def analyze(query: str):
+def analyze(query: str, user_id=None):
 
     start_time = time.time()
 
@@ -63,7 +78,7 @@ def analyze(query: str):
     print(f"Mode: {mode}")
 
     # -----------------------------
-    # STEP 1: INTENT DETECTION 🔥
+    # STEP 1: INTENT DETECTION 
     # -----------------------------
     intent = classify_intent(query)
     if mode == "realtime":
@@ -75,7 +90,7 @@ def analyze(query: str):
     # STEP 2: REALTIME → SEARCH
     # -----------------------------
     if intent == "realtime":
-        print("🔍 Using Search API")
+        print(" Using Search API")
 
         context = search_external(query)
         final = generate_feedback_answer(query, context, mode)
@@ -94,10 +109,10 @@ def analyze(query: str):
     # STEP 3: COMPANY → RAG
     # -----------------------------
     if intent == "rag":
-        rag_context = retrieve_docs(query)
+        rag_context = retrieve_docs(query, user_id=user_id)
 
         if rag_context and is_relevant(query, rag_context):
-            print("✅ Using RAG")
+            print("Using RAG")
 
             final = generate_feedback_answer(query, rag_context, mode)
 
@@ -114,14 +129,14 @@ def analyze(query: str):
     # -----------------------------
     # STEP 4: GENERAL → LLM
     # -----------------------------
-    print("🧠 Using LLM")
+    print("Using LLM")
 
     initial = generate_feedback_answer(query, "", mode)
     confidence = compute_confidence(initial)
 
     # fallback
     if confidence < 0.6:
-        print("🔁 Low confidence → Search")
+        print(" Low confidence → Search")
 
         context = search_external(query)
         final = generate_feedback_answer(query, context, mode)
@@ -144,7 +159,7 @@ def analyze(query: str):
     # -----------------------------
     if source != original_source:
         if source == "rag":
-            context = retrieve_docs(query)
+            context = retrieve_docs(query, user_id=user_id)
         elif source == "search":
             context = search_external(query)
         else:

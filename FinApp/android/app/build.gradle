@@ -74,6 +74,10 @@ android {
     compileSdkVersion rootProject.ext.compileSdkVersion
 
     namespace "com.finapp"
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.finapp"
         minSdkVersion rootProject.ext.minSdkVersion

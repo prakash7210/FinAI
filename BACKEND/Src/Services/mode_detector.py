@@ -41,14 +41,14 @@ Query: {query}
 
 
 # -----------------------------
-# MAIN HYBRID DETECTOR 🔥
+# MAIN HYBRID DETECTOR 
 # -----------------------------
 def detect_user_mode(query: str) -> str:
 
     q = query.lower().strip()
 
     # -----------------------------
-    # STEP 1: CASUAL (VERY IMPORTANT 🔥)
+    # STEP 1: CASUAL (VERY IMPORTANT )
     # -----------------------------
     casual_words = [
         "hi", "hello", "hey", "thanks", "ok", "yes",
@@ -70,7 +70,7 @@ def detect_user_mode(query: str) -> str:
         return "realtime"
 
     # -----------------------------
-    # STEP 3: EXPERT RULES ⚡
+    # STEP 3: EXPERT RULES 
     # -----------------------------
     expert_words = [
         "dcf", "valuation", "ebitda", "free cash flow",
@@ -83,7 +83,7 @@ def detect_user_mode(query: str) -> str:
         return "expert"
 
     # -----------------------------
-    # STEP 4: INTERMEDIATE RULES ⚡
+    # STEP 4: INTERMEDIATE RULES 
     # -----------------------------
     intermediate_words = [
         "revenue", "profit", "growth", "financial",
@@ -101,6 +101,6 @@ def detect_user_mode(query: str) -> str:
         return "beginner"
 
     # -----------------------------
-    # STEP 6: LLM FALLBACK 🔥
+    # STEP 6: LLM FALLBACK 
     # -----------------------------
     return detect_user_mode_llm(query)

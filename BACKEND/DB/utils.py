@@ -5,9 +5,18 @@ def serialize_chat(chat):
     }
 
 def serialize_message(msg):
-    return {
+    serialized = {
         "id": str(msg["_id"]),
         "chatId": str(msg["chatId"]),
         "text": msg["text"],
-        "isUser": msg["isUser"]
+        "isUser": msg["isUser"],
     }
+
+    if msg.get("fileName"):
+        serialized["fileName"] = msg["fileName"]
+    if msg.get("fileType"):
+        serialized["fileType"] = msg["fileType"]
+    if msg.get("fileUrl"):
+        serialized["fileUrl"] = msg["fileUrl"]
+
+    return serialized

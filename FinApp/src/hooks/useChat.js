@@ -1,5 +1,5 @@
 /* eslint-disable no-shadow */
-import {useState, useEffect} from 'react';
+import {useState, useEffect, useCallback, useRef} from 'react';
 import API from '../api/client';
 
 export default function useChat() {
@@ -7,19 +7,25 @@ export default function useChat() {
   const [chatId, setChatId] = useState(null);
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
+  const messagesRef = useRef([]);
+  const typingIntervalRef = useRef(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // 🔥 LOAD CHATS
-  const loadChats = async () => {
+  const loadChats = useCallback(async () => {
     try {
       const res = await API.get('/chats');
       setChats(res.data);
     } catch (err) {
       console.log('LOAD CHATS ERROR:', err?.message);
     }
-  };
+  }, []);
 
   // 🔥 LOAD MESSAGES
-  const loadMessages = async id => {
+  const loadMessages = useCallback(async id => {
     try {
       setChatId(id);
       const res = await API.get(`/chats/${id}`);
@@ -27,175 +33,316 @@ export default function useChat() {
     } catch (err) {
       console.log('LOAD MESSAGES ERROR:', err?.message);
     }
-  };
+  }, []);
 
   // 🔥 NEW CHAT
-  const createNewChat = () => {
+  const createNewChat = useCallback(() => {
     setMessages([]);
     setChatId(null);
-  };
+  }, []);
 
   // 🔥 SAFE RESPONSE HANDLER
-  const getAIResponse = data => {
+  const getAIResponse = useCallback(data => {
     return (
       data?.answer ||
       data?.response ||
       data?.data?.answer ||
       '⚠️ No response from server'
     );
-  };
+  }, []);
+
+  const getSavedMessageMeta = useCallback((data, fallbackChatId) => {
+    return {
+      id: data?.id,
+      chatId: data?.chatId || fallbackChatId,
+    };
+  }, []);
 
   // 🔥 SMOOTH TYPING
-  const typeMessage = (text, query, source = 'llm_generated') => {
-    let index = 0;
-    const chunkSize = 3;
+  const typeMessage = useCallback(
+    (text, query, source = 'llm_generated', messageMeta = {}) => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+      }
 
-    const interval = setInterval(() => {
-      index += chunkSize;
+      let index = 0;
+      const chunkSize = 3;
 
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
+      typingIntervalRef.current = setInterval(() => {
+        index += chunkSize;
 
-        if (!last || last.isUser) {
-          return [
-            ...prev,
-            {
-              text: text.slice(0, index),
-              isUser: false,
-              query,
-              source,
-              feedbackGiven: false,
-            },
-          ];
-        }
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
 
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...last,
-          text: text.slice(0, index),
-        };
+          if (!last || last.isUser) {
+            return [
+              ...prev,
+              {
+                ...messageMeta,
+                text: text.slice(0, index),
+                isUser: false,
+                query,
+                source,
+                feedbackGiven: false,
+              },
+            ];
+          }
 
-        return updated;
-      });
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...last,
+            text: text.slice(0, index),
+          };
 
-      if (index >= text.length) clearInterval(interval);
-    }, 30);
-  };
-
-  // 🔥 SEND MESSAGE
-  const sendMessage = async text => {
-    if (!text.trim()) return;
-
-    let id = chatId;
-
-    // ✅ CREATE CHAT IF NOT EXISTS
-    if (!id) {
-      try {
-        const titleRes = await API.post('/generate-title', {query: text});
-        const chatRes = await API.post('/chats', {
-          title: titleRes.data?.title || text.slice(0, 20),
+          return updated;
         });
 
-        id = chatRes.data.id;
-        setChatId(id);
-        loadChats();
-      } catch (err) {
-        console.log('CREATE CHAT ERROR:', err?.message);
+        if (index >= text.length) {
+          clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
+        }
+      }, 30);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
       }
-    }
+    };
+  }, []);
 
-    // ✅ ADD USER MESSAGE
-    setMessages(prev => [...prev, {text, isUser: true}]);
+  // 🔥 SEND MESSAGE
+  const sendMessage = useCallback(
+    async (text, file) => {
+      if (!text.trim() && !file) return;
 
-    try {
-      await API.post('/messages', {
-        chatId: id,
-        text,
-        isUser: true,
-      });
-    } catch (err) {
-      console.log('SAVE USER MSG ERROR:', err?.message);
-    }
+      let id = chatId;
 
-    setLoading(true);
+      // ✅ CREATE CHAT IF NOT EXISTS
+      if (!id) {
+        try {
+          const titleRes = await API.post('/generate-title', {
+            query: text || file?.name || 'New chat',
+          });
+          const chatRes = await API.post('/chats', {
+            title:
+              titleRes.data?.title ||
+              (text || file?.fileName || file?.name || 'New Chat').slice(0, 20),
+          });
 
-    try {
-      const res = await API.post('/analyze', {
-        query: text,
-        chatId: id,
-      });
+          id = chatRes.data.id;
+          setChatId(id);
+          loadChats();
+        } catch (err) {
+          console.log('CREATE CHAT ERROR:', err?.message);
+        }
+      }
 
-      console.log('API RESPONSE:', res.data); // 🔥 DEBUG
+      const attachment = file
+        ? {
+            fileName: file.fileName || file.name,
+            fileType: file.type,
+            fileUrl: file.uri,
+            file,
+          }
+        : null;
 
-      const responseText = getAIResponse(res.data);
-      const source = res.data?.source || 'llm_generated';
-
-      setTimeout(() => {
-        typeMessage(responseText, text, source);
-      }, 200);
-
-      await API.post('/messages', {
-        chatId: id,
-        text: responseText,
-        isUser: false,
-      });
-    } catch (err) {
-      console.log('CHAT ERROR:', err?.response?.data || err.message);
+      // ✅ ADD USER MESSAGE
+      const userLocalId = `user-${Date.now()}`;
 
       setMessages(prev => [
         ...prev,
         {
-          text: '❌ Server error. Please try again.',
-          isUser: false,
+          localId: userLocalId,
+          text: text || '',
+          isUser: true,
+          chatId: id,
+          fileName: attachment?.fileName,
+          fileType: attachment?.fileType,
+          fileUrl: attachment?.fileUrl,
+          file: attachment?.file,
         },
       ]);
-    }
 
-    setLoading(false);
-  };
+      let uploadedFile = null;
+      let uploadedFileText = '';
+      let uploadedFileName = attachment?.fileName;
 
-  // 🔥 EDIT MESSAGE
-  const editMessage = async (index, newText) => {
-    const msg = messages[index];
+      try {
+        if (file) {
+          const formData = new FormData();
+          formData.append('file', {
+            uri: file.uri,
+            name: file.fileName || file.name,
+            type: file.type || 'application/octet-stream',
+          });
 
-    const updatedMessages = messages.slice(0, index + 1);
-    updatedMessages[index] = {...msg, text: newText};
-    setMessages(updatedMessages);
+          const uploadRes = await API.post('/upload', formData, {
+            headers: {'Content-Type': 'multipart/form-data'},
+          });
 
-    try {
-      if (msg?.id) {
-        await API.put(`/messages/${msg.id}`, {
-          text: newText,
-        });
+          uploadedFile = uploadRes.data?.filename;
+          uploadedFileName = uploadRes.data?.filename || uploadedFileName;
+          uploadedFileText = uploadRes.data?.extractedText || '';
+        }
+
+        const savedMessageData = {
+          chatId: id,
+          text: text || '',
+          isUser: true,
+        };
+
+        if (attachment) {
+          savedMessageData.fileName = attachment.fileName;
+          savedMessageData.fileType = attachment.fileType;
+          savedMessageData.fileUrl = uploadedFile || attachment.fileUrl;
+        }
+
+        const userSaveRes = await API.post('/messages', savedMessageData);
+
+        setMessages(prev =>
+          prev.map(message =>
+            message.localId === userLocalId
+              ? {
+                  ...message,
+                  ...getSavedMessageMeta(userSaveRes.data, id),
+                  localId: undefined,
+                }
+              : message,
+          ),
+        );
+      } catch (err) {
+        console.log(
+          'SAVE USER MSG ERROR:',
+          err?.response?.data || err?.message,
+        );
       }
 
       setLoading(true);
 
-      const res = await API.post('/analyze', {
-        query: newText,
-      });
+      try {
+        const queryText =
+          text.trim() ||
+          `Analyze the attached file ${
+            uploadedFileName || attachment?.fileName || ''
+          }`.trim();
 
-      const responseText = getAIResponse(res.data);
-      const source = res.data?.source || 'llm_generated';
+        const res = await API.post('/analyze', {
+          query: queryText,
+          chatId: id,
+          fileName: uploadedFileName,
+          fileContext: uploadedFileText,
+        });
 
-      setTimeout(() => {
-        typeMessage(responseText, newText, source);
-      }, 200);
+        console.log('API RESPONSE:', res.data); // 🔥 DEBUG
 
-      await API.post('/messages', {
-        chatId: chatId,
-        text: responseText,
-        isUser: false,
-      });
-    } catch (err) {
-      console.log('EDIT ERROR:', err);
-    }
+        const responseText = getAIResponse(res.data);
+        const source = res.data?.source || 'llm_generated';
 
-    setLoading(false);
-  };
+        const assistantSaveRes = await API.post('/messages', {
+          chatId: id,
+          text: responseText,
+          isUser: false,
+        });
+
+        setTimeout(() => {
+          typeMessage(
+            responseText,
+            queryText,
+            source,
+            getSavedMessageMeta(assistantSaveRes.data, id),
+          );
+        }, 200);
+      } catch (err) {
+        console.log('CHAT ERROR:', err?.response?.data || err.message);
+
+        setMessages(prev => [
+          ...prev,
+          {
+            text: '❌ Server error. Please try again.',
+            isUser: false,
+          },
+        ]);
+      }
+
+      setLoading(false);
+    },
+    [chatId, getAIResponse, getSavedMessageMeta, loadChats, typeMessage],
+  );
+
+  // 🔥 EDIT MESSAGE
+  const editMessage = useCallback(
+    async (index, newText) => {
+      const currentMessages = messagesRef.current;
+      const msg = currentMessages[index];
+      const editedText = newText.trim();
+      const activeChatId = msg?.chatId || chatId;
+
+      if (!msg?.isUser || !editedText) return;
+
+      const updatedMessages = currentMessages.slice(0, index + 1);
+      updatedMessages[index] = {...msg, text: editedText, chatId: activeChatId};
+      setMessages(updatedMessages);
+
+      try {
+        setLoading(true);
+
+        if (msg?.id) {
+          await API.put(`/messages/${msg.id}`, {
+            text: editedText,
+          });
+        }
+
+        const messagesToDelete = currentMessages
+          .slice(index + 1)
+          .filter(item => item?.id);
+
+        await Promise.all(
+          messagesToDelete.map(item => API.delete(`/messages/${item.id}`)),
+        );
+
+        const res = await API.post('/analyze', {
+          query: editedText,
+          chatId: activeChatId,
+        });
+
+        const responseText = getAIResponse(res.data);
+        const source = res.data?.source || 'llm_generated';
+        const assistantSaveRes = await API.post('/messages', {
+          chatId: activeChatId,
+          text: responseText,
+          isUser: false,
+        });
+
+        setTimeout(() => {
+          typeMessage(
+            responseText,
+            editedText,
+            source,
+            getSavedMessageMeta(assistantSaveRes.data, activeChatId),
+          );
+        }, 200);
+      } catch (err) {
+        console.log('EDIT ERROR:', err?.response?.data || err.message);
+        setMessages(prev => [
+          ...prev,
+          {
+            text: 'Could not regenerate response. Please try again.',
+            isUser: false,
+          },
+        ]);
+      }
+
+      setLoading(false);
+    },
+    [chatId, getAIResponse, getSavedMessageMeta, typeMessage],
+  );
 
   // 🔥 DELETE CHAT
-  const deleteChat = async chatId => {
+  const deleteChat = useCallback(async chatId => {
     setChats(prev => prev.filter(c => c.id !== chatId));
 
     try {
@@ -203,10 +350,10 @@ export default function useChat() {
     } catch (err) {
       console.log(err);
     }
-  };
+  }, []);
 
   // 🔥 RENAME CHAT
-  const renameChat = async (chatId, newTitle) => {
+  const renameChat = useCallback(async (chatId, newTitle) => {
     try {
       if (!newTitle?.trim()) return;
 
@@ -224,46 +371,49 @@ export default function useChat() {
     } catch (err) {
       console.log('RENAME ERROR:', err?.response?.data || err);
     }
-  };
+  }, []);
 
   // 🔥 SEND VOICE (UPDATED SAFE)
-  const sendVoice = async filePath => {
-    try {
-      setLoading(true);
+  const sendVoice = useCallback(
+    async filePath => {
+      try {
+        setLoading(true);
 
-      const formData = new FormData();
+        const formData = new FormData();
 
-      formData.append('file', {
-        uri: filePath,
-        name: 'voice.m4a',
-        type: 'audio/m4a',
-      });
+        formData.append('file', {
+          uri: filePath,
+          name: 'voice.m4a',
+          type: 'audio/m4a',
+        });
 
-      const res = await API.post('/voice-chat', formData, {
-        headers: {'Content-Type': 'multipart/form-data'},
-      });
+        const res = await API.post('/voice-chat', formData, {
+          headers: {'Content-Type': 'multipart/form-data'},
+        });
 
-      const aiReply = getAIResponse(res.data);
-      const textQuery = res.data?.query || '';
+        const aiReply = getAIResponse(res.data);
+        const textQuery = res.data?.query || '';
 
-      setMessages(prev => [
-        ...prev,
-        {text: textQuery, isUser: true},
-        {
-          text: aiReply,
-          isUser: false,
-          query: textQuery,
-        },
-      ]);
-    } catch (err) {
-      console.log('VOICE ERROR:', err?.response?.data || err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+        setMessages(prev => [
+          ...prev,
+          {text: textQuery, isUser: true},
+          {
+            text: aiReply,
+            isUser: false,
+            query: textQuery,
+          },
+        ]);
+      } catch (err) {
+        console.log('VOICE ERROR:', err?.response?.data || err.message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [getAIResponse],
+  );
   useEffect(() => {
     loadChats();
-  }, []);
+  }, [loadChats]);
 
   return {
     messages,

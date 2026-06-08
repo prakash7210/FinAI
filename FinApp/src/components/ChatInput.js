@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   TextInput,
@@ -8,19 +8,36 @@ import {
   Text,
   Animated,
   Image,
+  Platform,
 } from 'react-native';
 
 import Voice from '@react-native-voice/voice';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import DocumentPicker from 'react-native-document-picker';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
-import {COLORS} from '../theme/theme';
-import API from '../api/client';
+import {useTheme} from '../context/ThemeContext';
+
+// 🔥 FORMAT URI FOR REACT NATIVE
+const formatImageUri = uri => {
+  if (!uri) return null;
+  if (Platform.OS === 'android') {
+    if (uri.startsWith('content://') || uri.startsWith('file://')) {
+      return uri;
+    }
+    if (!uri.startsWith('/')) {
+      return `file://${uri}`;
+    }
+    return `file://${uri}`;
+  }
+  return uri;
+};
 
 export default function ChatInput({onSend}) {
+  const {colors} = useTheme();
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [imageLoadError, setImageLoadError] = useState(false);
 
   const [listening, setListening] = useState(false);
   const [voiceText, setVoiceText] = useState('');
@@ -55,8 +72,10 @@ export default function ChatInput({onSend}) {
 
   // 🎤 MIC ANIMATION
   useEffect(() => {
+    let pulseAnimation;
+
     if (listening) {
-      Animated.loop(
+      pulseAnimation = Animated.loop(
         Animated.sequence([
           Animated.timing(scaleAnim, {
             toValue: 1.4,
@@ -69,14 +88,20 @@ export default function ChatInput({onSend}) {
             useNativeDriver: true,
           }),
         ]),
-      ).start();
+      );
+
+      pulseAnimation.start();
     } else {
       scaleAnim.setValue(1);
     }
-  }, [listening]);
+
+    return () => {
+      pulseAnimation?.stop?.();
+    };
+  }, [listening, scaleAnim]);
 
   // 🎤 START
-  const startListening = async () => {
+  const startListening = useCallback(async () => {
     try {
       if (listening) return;
 
@@ -102,28 +127,28 @@ export default function ChatInput({onSend}) {
       console.log(e);
       setListening(false);
     }
-  };
+  }, [listening]);
 
   // 🎤 CANCEL
-  const cancelVoice = async () => {
+  const cancelVoice = useCallback(async () => {
     try {
       await Voice.cancel();
     } catch {}
     setListening(false);
     setVoiceText('');
-  };
+  }, []);
 
   // 🎤 SEND
-  const sendVoice = () => {
+  const sendVoice = useCallback(() => {
     if (!voiceText.trim()) return;
 
     onSend(voiceText, null);
     setVoiceText('');
     setListening(false);
-  };
+  }, [voiceText, onSend]);
 
   // 🔥 MENU ANIMATION
-  const openMenu = () => {
+  const openMenu = useCallback(() => {
     setShowOptions(true);
 
     Animated.parallel([
@@ -137,9 +162,9 @@ export default function ChatInput({onSend}) {
         useNativeDriver: true,
       }),
     ]).start();
-  };
+  }, [fadeAnim, scaleMenu]);
 
-  const closeMenu = () => {
+  const closeMenu = useCallback(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -152,24 +177,34 @@ export default function ChatInput({onSend}) {
         useNativeDriver: true,
       }),
     ]).start(() => setShowOptions(false));
-  };
+  }, [fadeAnim, scaleMenu]);
 
   // 📸 CAMERA
-  const openCamera = async () => {
+  const openCamera = useCallback(async () => {
     closeMenu();
+    setImageLoadError(false);
     const res = await launchCamera({mediaType: 'photo'});
-    if (res.assets?.length) setFile(res.assets[0]);
-  };
+    if (res.assets?.length) {
+      const asset = res.assets[0];
+      asset.uri = formatImageUri(asset.uri);
+      setFile(asset);
+    }
+  }, [closeMenu]);
 
   // 🖼️ GALLERY
-  const openGallery = async () => {
+  const openGallery = useCallback(async () => {
     closeMenu();
+    setImageLoadError(false);
     const res = await launchImageLibrary({mediaType: 'photo'});
-    if (res.assets?.length) setFile(res.assets[0]);
-  };
+    if (res.assets?.length) {
+      const asset = res.assets[0];
+      asset.uri = formatImageUri(asset.uri);
+      setFile(asset);
+    }
+  }, [closeMenu]);
 
   // 📄 FILE
-  const openFiles = async () => {
+  const openFiles = useCallback(async () => {
     closeMenu();
     try {
       const res = await DocumentPicker.pickSingle({
@@ -177,41 +212,33 @@ export default function ChatInput({onSend}) {
       });
       setFile(res);
     } catch {}
-  };
+  }, [closeMenu]);
 
   // 🚀 SEND
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (!text.trim() && !file) return;
 
+    const messageText = text;
+    const attachment = file;
+
+    setText('');
+    setFile(null);
+    setImageLoadError(false);
+
     try {
-      if (file) {
-        const formData = new FormData();
-
-        formData.append('file', {
-          uri: file.uri,
-          name: file.fileName || file.name,
-          type: file.type || 'application/octet-stream',
-        });
-
-        setUploadStatus('Uploading...');
-
-        await API.post('/upload', formData, {
-          headers: {'Content-Type': 'multipart/form-data'},
-        });
-
-        setUploadStatus('✅ Ready');
-        setTimeout(() => setUploadStatus(''), 1500);
+      if (attachment) {
+        setUploadStatus('...');
       }
 
-      onSend(text, file);
+      await onSend(messageText, attachment);
 
-      setText('');
-      setFile(null);
-    } catch {
+      setTimeout(() => setUploadStatus(''), 1500);
+    } catch (err) {
+      console.log('SEND ERROR:', err?.message || err);
       setUploadStatus('❌ Failed');
       setTimeout(() => setUploadStatus(''), 1500);
     }
-  };
+  }, [text, file, onSend]);
 
   return (
     <View style={{position: 'relative'}}>
@@ -241,16 +268,17 @@ export default function ChatInput({onSend}) {
         <View
           style={{
             flexDirection: 'row',
-            backgroundColor: COLORS.card,
+            backgroundColor: colors.card,
             margin: 10,
             padding: 8,
             borderRadius: 12,
             alignItems: 'center',
           }}>
-          {file.type?.includes('image') ? (
+          {file.type?.includes('image') && !imageLoadError ? (
             <Image
               source={{uri: file.uri}}
               style={{width: 60, height: 60, borderRadius: 8}}
+              onError={() => setImageLoadError(true)}
             />
           ) : (
             <Icon name="insert-drive-file" size={28} color="#aaa" />
@@ -273,7 +301,7 @@ export default function ChatInput({onSend}) {
             position: 'absolute',
             bottom: 70,
             left: 10,
-            backgroundColor: COLORS.card,
+            backgroundColor: colors.card,
             borderRadius: 16,
             padding: 10,
             opacity: fadeAnim,
@@ -306,7 +334,7 @@ export default function ChatInput({onSend}) {
           padding: 10,
         }}>
         <TouchableOpacity onPress={openMenu}>
-          <Icon name="add" size={24} color={COLORS.accent} />
+          <Icon name="add" size={24} color={colors.accent} />
         </TouchableOpacity>
 
         <TextInput
@@ -316,8 +344,8 @@ export default function ChatInput({onSend}) {
           placeholderTextColor="#888"
           style={{
             flex: 1,
-            backgroundColor: COLORS.card,
-            color: '#fff',
+            backgroundColor: colors.card,
+            color: colors.textPrimary,
             padding: 12,
             borderRadius: 10,
             marginLeft: 8,
@@ -327,7 +355,7 @@ export default function ChatInput({onSend}) {
         {/* 🎤 MIC */}
         {!listening && voiceText === '' && (
           <TouchableOpacity onPress={startListening}>
-            <Icon name="mic" size={22} color={COLORS.accent} margin={10} />
+            <Icon name="mic" size={22} color={colors.accent} margin={10} />
           </TouchableOpacity>
         )}
 
@@ -359,7 +387,7 @@ export default function ChatInput({onSend}) {
         {/* SEND TEXT */}
         {!listening && voiceText === '' && (
           <TouchableOpacity onPress={handleSend}>
-            <Icon name="send" size={22} color={COLORS.accent} />
+            <Icon name="send" size={22} color={colors.accent} />
           </TouchableOpacity>
         )}
       </View>

@@ -15,7 +15,10 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
-        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("com.android.tools.build:gradle:7.4.2")
+        classpath(files("../node_modules/@react-native/gradle-plugin/build/libs/react-native-gradle-plugin.jar"))
+        classpath("com.google.code.gson:gson:2.8.9")
+        classpath("com.google.guava:guava:31.0.1-jre")
+        classpath("com.squareup:javapoet:1.13.0")
     }
 }

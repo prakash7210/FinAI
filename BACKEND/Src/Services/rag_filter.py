@@ -1,7 +1,5 @@
-from sentence_transformers import SentenceTransformer
 import numpy as np
-
-model = SentenceTransformer("all-MiniLM-L6-v2")
+from Src.RAG.embeddings import encode_texts
 
 
 def is_relevant(query, context, threshold=0.5):
@@ -9,8 +7,7 @@ def is_relevant(query, context, threshold=0.5):
     Semantic similarity check
     """
 
-    q_emb = model.encode([query])[0]
-    c_emb = model.encode([context])[0]
+    q_emb, c_emb = encode_texts([query, context])
 
     similarity = np.dot(q_emb, c_emb) / (
         np.linalg.norm(q_emb) * np.linalg.norm(c_emb)
